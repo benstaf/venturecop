@@ -18,8 +18,11 @@ class BaselineAnalysis(BaseModel):
 # Load environment variables
 load_dotenv()
 
+default_model=os.getenv("DEFAULT_MODEL")
+
+
 class BaselineFramework(BaseAgent):
-    def __init__(self, model="gpt-4o-mini"):
+    def __init__(self, model=default_model):
         super().__init__(model)
         self.logger = logging.getLogger(__name__)
 

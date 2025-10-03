@@ -1,3 +1,5 @@
+from config import DEFAULT_MODEL
+
 import os
 import sys
 import logging
@@ -21,7 +23,7 @@ class QuantitativeDecision(BaseModel):
     reasoning: str = Field(..., description="One-line reasoning for the decision")
 
 class IntegrationAgent(BaseAgent):
-    def __init__(self, model="gpt-4o-mini"):
+    def __init__(self, model=DEFAULT_MODEL):
         super().__init__(model)
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
@@ -73,6 +75,41 @@ class IntegrationAgent(BaseAgent):
         self.logger.info("Basic integrated analysis completed")
         
         return integrated_analysis
+
+
+
+    def integrated_analysis_basic(self, market_info, product_info, founder_info):
+        prompt = """
+        You are the chief analyst at a VC firm. 
+        Respond ONLY with a valid JSON object matching this schema:
+        {{
+            "overall_score": <float 1-10>,
+            "IntegratedAnalysis": "A comprehensive analysis of the startup from the VC perspective",
+            "recommendation": "Recommendation for next steps",
+            "outcome": "Invest or Hold"
+        }}
+
+        Market Viability: {market_info}
+        Product Viability: {product_info}
+        Founder Competency: {founder_info}
+
+        Make sure your response is valid JSON and includes ALL fields.
+        """
+
+        user_prompt = prompt.format(
+            market_info=market_info,
+            product_info=product_info,
+            founder_info=founder_info
+        )
+
+        integrated_analysis = self.get_json_response(IntegratedAnalysis, user_prompt, "Be professional.")
+        self.logger.info("Basic integrated analysis completed")
+
+        return integrated_analysis
+
+
+
+
 
     def integrated_analysis_pro(self, market_info, product_info, founder_info, founder_idea_fit, founder_segmentation, rf_prediction):
         self.logger.info("Starting pro integrated analysis")
@@ -132,6 +169,45 @@ class IntegrationAgent(BaseAgent):
         self.logger.info("Pro integrated analysis completed")
         
         return integrated_analysis
+
+
+    def integrated_analysis_pro(self, market_info, product_info, founder_info, founder_idea_fit, founder_segmentation, rf_prediction):
+        prompt = """
+        You are the chief analyst at a VC firm. 
+        Respond ONLY with a valid JSON object matching this schema:
+        {
+            "overall_score": <float 1-10>,
+            "IntegratedAnalysis": "A comprehensive analysis of the startup from the VC perspective",
+            "recommendation": "Recommendation for next steps",
+            "outcome": "Invest or Hold"
+        }
+
+        Market Viability: {market_info}
+        Product Viability: {product_info}
+        Founder Competency: {founder_info}
+        Founder-Idea Fit: {founder_idea_fit}
+        Founder Segmentation: {founder_segmentation}
+        Random Forest Prediction: {rf_prediction}
+
+        Make sure your response is valid JSON and includes ALL fields.
+        """
+
+
+        user_prompt = prompt.format(
+            market_info=market_info,
+            product_info=product_info,
+            founder_info=founder_info,
+            founder_idea_fit=founder_idea_fit,
+            founder_segmentation=founder_segmentation,
+            rf_prediction=rf_prediction
+        )
+
+        integrated_analysis = self.get_json_response(IntegratedAnalysis, user_prompt, "Be professional.")
+        self.logger.info("Pro integrated analysis completed")
+
+        return integrated_analysis
+
+
 
     def getquantDecision(self, rf_prediction, Founder_Idea_Fit, Founder_Segmentation):
         self.logger.info("Starting quantitative decision analysis")

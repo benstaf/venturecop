@@ -13,8 +13,11 @@ from utils.api_wrapper import OpenAIAPI
 if not logging.getLogger().hasHandlers():
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(name)s - %(funcName)s - %(message)s')
 
+
+default_model=os.getenv("DEFAULT_MODEL")
+
 class BaseAgent:
-    def __init__(self, model="gpt-4o-mini"):
+    def __init__(self, model=default_model):
         self.model = model
         self.logger = logging.getLogger(__name__)
         self.logger.debug(f"Initializing BaseAgent with model: {self.model}")
@@ -41,6 +44,17 @@ class BaseAgent:
         json_response = self.openai_api.get_structured_output(base_model, system_content, user_content)
         self.logger.debug(f"BaseAgent received JSON response: {json_response}")
         return json_response
+
+
+
+    def get_json_response(self, base_model, system_content, user_content):
+        # Add this one debug line
+        self.logger.debug(f"DEBUG: system_content={system_content}, user_content={user_content}")
+        self.logger.debug(f"BaseAgent getting JSON response. Schema: {base_model.__name__}, System: '{system_content[:50] if system_content else None}...', User: '{user_content[:50] if user_content else None}...'")
+        json_response = self.openai_api.get_structured_output(base_model, system_content, user_content)
+        self.logger.debug(f"BaseAgent received JSON response: {json_response}")
+        return json_response
+
 
 if __name__ == "__main__":
     # Setup basic logging for the __main__ block

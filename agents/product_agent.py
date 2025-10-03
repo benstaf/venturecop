@@ -1,3 +1,5 @@
+from config import DEFAULT_MODEL
+
 import os
 import sys
 import logging
@@ -19,7 +21,7 @@ class ProductAnalysis(BaseModel):
     market_fit_score: int = Field(..., description="Market fit score on a scale of 1 to 10")
 
 class ProductAgent(BaseAgent):
-    def __init__(self, model="gpt-4o-mini"):
+    def __init__(self, model=DEFAULT_MODEL):
         super().__init__(model)
         self.search_api = GoogleSearchAPI()
         self.logger = logging.getLogger(__name__)
@@ -231,6 +233,24 @@ class ProductAgent(BaseAgent):
 
         Make sure that you think step by step and analyze in a professional manner.
         """
+    def _get_analysis_prompt(self):
+        return """
+        You are a professional VC product analyst. 
+        Analyze the startup's product and respond ONLY with a valid JSON object matching this schema:
+        {
+            "features_analysis": "...",
+            "tech_stack_evaluation": "...",
+            "usp_assessment": "...",
+            "potential_score": <int 1-10>,
+            "innovation_score": <int 1-10>,
+            "market_fit_score": <int 1-10>
+        }
+
+        Product Information:
+        {product_info}
+
+        Make sure your response is valid JSON and includes ALL fields.
+        """
 
     def _get_advanced_analysis_prompt(self):
         return """
@@ -253,6 +273,33 @@ class ProductAgent(BaseAgent):
         
         Make sure to think step by step and analyze in a professional manner.
         """
+
+
+
+    def _get_advanced_analysis_prompt(self):
+        return """
+        You are a professional VC product analyst. 
+        Provide an in-depth analysis of the startup's product. 
+        Respond ONLY with a valid JSON object matching this schema:
+        {
+            "features_analysis": "...",
+            "tech_stack_evaluation": "...",
+            "usp_assessment": "...",
+            "potential_score": <int 1-10>,
+            "innovation_score": <int 1-10>,
+            "market_fit_score": <int 1-10>
+        }
+
+        Product Information:
+        {product_info}
+
+        Include insights from external research about similar products, technical feasibility, and industry standards. 
+        Make sure your response is valid JSON and includes ALL fields.
+        """
+
+
+
+
 
     def _get_keyword_generation_prompt(self):
         return """You are an AI assistant skilled at generating relevant search keywords 

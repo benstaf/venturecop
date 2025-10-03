@@ -1,3 +1,5 @@
+from config import DEFAULT_MODEL
+
 import os
 import sys
 import logging
@@ -18,7 +20,7 @@ class MarketAnalysis(BaseModel):
     viability_score: int = Field(..., description="Market viability score on a scale of 1 to 10")
 
 class MarketAgent(BaseAgent):
-    def __init__(self, model="gpt-4o-mini"):
+    def __init__(self, model=DEFAULT_MODEL):
         super().__init__(model)
         self.search_api = GoogleSearchAPI()
         self.logger = logging.getLogger(__name__)
@@ -172,6 +174,25 @@ class MarketAgent(BaseAgent):
         Conclude with a market viability score from 1 to 10.
         """
 
+
+    def _get_analysis_prompt(self):
+        return """
+        As an experienced market analyst, analyze the startup's market based on the following information:
+        {market_info}
+
+        Respond ONLY in valid JSON with exactly these fields:
+        {
+          "market_size": "string",
+          "growth_rate": "string",
+          "competition": "string",
+          "market_trends": "string",
+          "viability_score": integer (1-10)
+        }
+        """
+
+
+
+
     def _get_advanced_analysis_prompt(self):
         return """
         As an experienced market analyst, provide an in-depth analysis of the startup's market based on the following information:
@@ -182,6 +203,30 @@ class MarketAgent(BaseAgent):
         Conclude with a market viability score from 1 to 10, factoring in the external data.
         """
     
+
+
+
+    def _get_advanced_analysis_prompt(self):
+        return """
+        As an experienced market analyst, analyze the startup's market based on the following information:
+        {market_info}
+
+        Include insights from the additional external research provided.
+        Respond ONLY in valid JSON with exactly these fields:
+        {
+          "market_size": "string",
+          "growth_rate": "string",
+          "competition": "string",
+          "market_trends": "string",
+          "viability_score": integer (1-10)
+        }
+        """
+
+
+
+
+
+
     def natural_language_analysis_prompt(self):
         return """
         You are a professional agent in a VC firm to analyze a company. Your task is to analyze the company here. Context: {startup_info}

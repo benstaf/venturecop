@@ -1,3 +1,5 @@
+from config import DEFAULT_MODEL
+
 import os
 import sys
 import logging
@@ -64,7 +66,7 @@ class StartupEvaluation(BaseModel):
     rationale: str = Field(None, description="Brief explanation for the recommendation")
 
 class VCScoutAgent(BaseAgent):
-    def __init__(self, model="gpt-4o-mini"):
+    def __init__(self, model=DEFAULT_MODEL):
         super().__init__(model)
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
@@ -94,10 +96,79 @@ class VCScoutAgent(BaseAgent):
         try:
             startup_info_dict = self.get_json_response(StartupInfo, prompt, startup_info)
             self.logger.debug(f"Parsed startup info: {startup_info_dict}")
+            if isinstance(startup_info_dict, dict):
+                return StartupInfo(**startup_info_dict)  # 🟢 convert dict to StartupInfo
             return startup_info_dict  # Return the dictionary directly
         except Exception as e:
             self.logger.error(f"Error parsing startup info: {str(e)}")
             return StartupInfo(name="Error", description="Failed to parse startup info")
+
+
+
+
+
+    def parse_record(self, startup_info: str) -> StartupInfo:
+        """
+        Convert a string description of a startup into a StartupInfo schema.
+        """
+        self.logger.info("Parsing startup information into StartupInfo schema")
+        prompt = """
+        Convert the following startup description into a detailed JSON structure that matches the StartupInfo schema.
+        Include ALL fields listed below. If information for a field is not available, set it to "N/A" or null.
+
+        **Required fields (must be included):**
+        - name (str)
+        - description (str, default to "N/A" if missing)
+        - mission (str, default to "N/A" if missing)
+        - vision (str, default to "N/A" if missing)
+        - industry (str, default to "N/A" if missing)
+        - patents (str, default to "N/A" if none)
+
+        **Optional fields (include if available, otherwise omit):**
+        - tagline (str)
+        - ticker (str)
+        - ...
+
+        **Example Output:**
+        ```json
+        {
+          "name": "Omniscient Neurotechnology",
+          "description": "Uses data & machine learning to build advanced brain maps...",
+          "mission": "To improve the lives of billions through connectomics...",
+          "vision": "Connectomics is a foundational technology of the 21st century...",
+          "industry": "Neurotechnology",
+          "patents": "N/A",
+          "tagline": "THE HUMAN CONNECTOME COMPANY",
+          "ticker": "o8t"
+        }
+        ```
+
+        **Startup description:**
+        {startup_info}
+        """
+        try:
+            startup_info_dict = self.get_json_response(StartupInfo, prompt, startup_info)
+            self.logger.debug(f"Parsed startup info: {startup_info_dict}")
+            if isinstance(startup_info_dict, dict):
+                return StartupInfo(**startup_info_dict)
+            return startup_info_dict
+        except Exception as e:
+            self.logger.error(f"Error parsing startup info: {str(e)}")
+            # Return a valid StartupInfo object with default values
+            return StartupInfo(
+                name="N/A",
+                description="Failed to parse startup info",
+                mission="N/A",
+                vision="N/A",
+                industry="N/A",
+                patents="N/A",
+                # ... (include all required fields)
+            )
+
+
+
+
+
 
     def evaluate(self, startup_info: StartupInfo, mode: str) -> StartupEvaluation:
         self.logger.info(f"Starting startup evaluation in {mode} mode")
@@ -174,34 +245,41 @@ class VCScoutAgent(BaseAgent):
         a confidence level in your recommendation (0 to 1), and a brief rationale for your decision.
         """
 
+
+
+
     def _get_categorization_prompt(self):
         return """
-        As an analyst specializing in startup evaluation, categorize the given startup based on the following criteria.
-        Provide a categorical response for each of the following questions based on the startup information provided.
-        Use ONLY the specified categorical responses for each field. Do not use any other responses.
+        You are a strict JSON generator.
+        Output ONLY valid JSON matching the StartupCategorization schema.
+        Do not include explanations, instructions, or extra text.
+        If information is missing, fill with "N/A".
 
-        1. Industry Growth: [Yes/No/N/A]
-        2. Market Size: [Small/Medium/Large/N/A]
-        3. Development Pace: [Slower/Same/Faster/N/A]
-        4. Market Adaptability: [Not Adaptable/Somewhat Adaptable/Very Adaptable/N/A]
-        5. Execution Capabilities: [Poor/Average/Excellent/N/A]
-        6. Funding Amount: [Below Average/Average/Above Average/N/A]
-        7. Valuation Change: [Decreased/Remained Stable/Increased/N/A]
-        8. Investor Backing: [Unknown/Recognized/Highly Regarded/N/A]
-        9. Reviews and Testimonials: [Negative/Mixed/Positive/N/A]
-        10. Product-Market Fit: [Weak/Moderate/Strong/N/A]
-        11. Sentiment Analysis: [Negative/Neutral/Positive/N/A]
-        12. Innovation Mentions: [Rarely/Sometimes/Often/N/A]
-        13. Cutting-Edge Technology: [No/Mentioned/Emphasized/N/A]
-        14. Timing: [Too Early/Just Right/Too Late/N/A]
+        Schema with required snake_case keys and allowed values:
 
-        Provide your analysis in a JSON format that matches the StartupCategorization schema.
-        If you cannot determine a category based on the given information, use 'N/A'.
-        Do not include any explanations or additional text outside of the JSON structure.
+        {
+          "industry_growth": "Yes/No/N/A",
+          "market_size": "Small/Medium/Large/N/A",
+          "development_pace": "Slower/Same/Faster/N/A",
+          "market_adaptability": "Not Adaptable/Somewhat Adaptable/Very Adaptable/N/A",
+          "execution_capabilities": "Poor/Average/Excellent/N/A",
+          "funding_amount": "Below Average/Average/Above Average/N/A",
+          "valuation_change": "Decreased/Remained Stable/Increased/N/A",
+          "investor_backing": "Unknown/Recognized/Highly Regarded/N/A",
+          "reviews_testimonials": "Negative/Mixed/Positive/N/A",
+          "product_market_fit": "Weak/Moderate/Strong/N/A",
+          "sentiment_analysis": "Negative/Neutral/Positive/N/A",
+          "innovation_mentions": "Rarely/Sometimes/Often/N/A",
+          "cutting_edge_technology": "No/Mentioned/Emphasized/N/A",
+          "timing": "Too Early/Just Right/Too Late/N/A"
+        }
 
         Startup Information:
         {startup_info}
         """
+
+
+
 
 if __name__ == "__main__":
     def test_vc_scout_agent():

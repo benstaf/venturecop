@@ -1,4 +1,11 @@
+from config import DEFAULT_MODEL
+
 import logging
+
+
+logging.getLogger("watchdog").propagate = False
+logging.getLogger("watchdog").disabled = True
+
 from typing import Dict, Any
 from pydantic import BaseModel
 
@@ -12,7 +19,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class StartupFramework:
-    def __init__(self, model="gpt-4o-mini"):
+    def __init__(self, model=DEFAULT_MODEL):
         self.model = model
         self.market_agent = MarketAgent(model)
         self.product_agent = ProductAgent(model)

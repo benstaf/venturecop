@@ -76,22 +76,35 @@ def analyze_startup_with_updates(framework, startup_info_str, placeholder):
             result['Founder Idea Fit'] = founder_idea_fit[0]
 
             update_status("Integration", 0.8)
-            integrated_analysis = framework.integration_agent.integrate_analyses(
+            integrated_analysis = framework.integration_agent.integrated_analysis_basic(
                 market_analysis.dict(),
                 product_analysis.dict(),
-                founder_analysis.dict(),
-                prediction,
-                mode="advanced"
+                founder_analysis.dict()
+#                prediction
+#                mode="advanced"
             )
             st.write("Integration Complete")
-            result['Final Decision'] = integrated_analysis.dict()
+     #       result['Final Decision'] = integrated_analysis.dict()
+
+            if integrated_analysis is not None:
+                result['Final Decision'] = integrated_analysis.dict()
+            else:
+                result['Final Decision'] = {
+                    'overall_score': 0.0,
+                    'IntegratedAnalysis': 'Integration analysis failed',
+                    'recommendation': 'Unable to provide recommendation',
+                    'outcome': 'Hold'
+                }
+
+
 
             update_status("Quantitative decision", 0.9)
             quant_decision = framework.integration_agent.getquantDecision(
                 prediction,
                 founder_idea_fit[0],
-                founder_segmentation,
-                integrated_analysis.dict()
+                founder_segmentation
+#                integrated_analysis.dict() if integrated_analysis else {}
+               # integrated_analysis.dict()
             )
             st.write("Quantitative Decision Complete")
             result['Quantitative Decision'] = quant_decision.dict()
@@ -112,13 +125,14 @@ def display_final_results(result, mode):
     st.write("### Final Decision")
     final_decision = result['Final Decision']
     st.write(f"Overall Score: {final_decision['overall_score']:.2f}")
-    st.write(f"Summary: {final_decision['summary']}")
-    st.write("Strengths:")
-    for strength in final_decision['strengths']:
-        st.write(f"- {strength}")
-    st.write("Weaknesses:")
-    for weakness in final_decision['weaknesses']:
-        st.write(f"- {weakness}")
+    st.write(f"Analysis: {final_decision.get('IntegratedAnalysis', 'Not available')}")
+   # st.write(f"Summary: {final_decision['summary']}")
+   # st.write("Strengths:")
+   # for strength in final_decision['strengths']:
+    #    st.write(f"- {strength}")
+   # st.write("Weaknesses:")
+   # for weakness in final_decision['weaknesses']:
+    #    st.write(f"- {weakness}")
     st.write(f"Recommendation: {final_decision['recommendation']}")
 
     # Display Market Info
@@ -144,8 +158,9 @@ def display_final_results(result, mode):
     st.write("### Founder Information")
     founder_info = result['Founder Info']
     st.write(f"Competency Score: {founder_info['competency_score']}")
-    st.write(f"Strengths: {founder_info['strengths']}")
-    st.write(f"Challenges: {founder_info['challenges']}")
+    st.write(f"Analysis: {founder_info.get('analysis', 'Not available')}")
+  #  st.write(f"Strengths: {founder_info['strengths']}")
+   # st.write(f"Challenges: {founder_info['challenges']}")
 
     # Display Prediction and Categorization
     st.write("### Prediction and Categorization")

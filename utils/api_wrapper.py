@@ -26,6 +26,7 @@ class OpenAIAPI:
         Initialize the OpenAIAPI with the given model name.
         """
         self.model_name = model_name
+        self.model = model_name
         self.logger = logging.getLogger(__name__)
         
         api_key = None
@@ -33,6 +34,8 @@ class OpenAIAPI:
 
         # 1. Try os.getenv() first (which load_dotenv() should populate if .env exists)
         api_key = os.getenv("OPENAI_API_KEY")
+        base_url = os.getenv("OPENAI_API_URL")
+        
         if api_key:
             api_key_source = "os.getenv (potentially from .env)"
         
@@ -54,7 +57,7 @@ class OpenAIAPI:
             self.logger.error("OPENAI_API_KEY not found through os.getenv, .env, or Streamlit secrets.")
             raise ValueError("OPENAI_API_KEY not found.")
         
-        self.client = OpenAI(api_key=api_key)
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
 
     def get_completion(self, system_content, user_content):
         """
@@ -76,44 +79,312 @@ class OpenAIAPI:
             self.logger.error(f"An error occurred during get_completion: {e}", exc_info=True)
             return None
 
-    def get_structured_output(self, schema_class: BaseModel, user_prompt, system_prompt):
+
+
+
+
+
+    def _extract_content_with_fallback(self, message) -> str:
         """
-        Structure the output according to the provided schema, user prompt, and system prompt.
+        Extract content from message object with fallback to reasoning_content
+        
+        Args:
+            message: OpenAI message object
+            
+        Returns:
+            Extracted content string
         """
-        self.logger.debug(f"Requesting structured output. Model: {self.model_name}, Schema: {schema_class.__name__}, System: '{system_prompt[:50]}...', User: '{user_prompt[:50]}...'")
+        # Try main content field first
+        content = getattr(message, 'content', None)
+        if content and content.strip():
+            self.logger.debug(f"Using 'content' field: {len(content)} characters")
+            return content
+        
+        # Fallback to reasoning_content
+        reasoning_content = getattr(message, 'reasoning_content', None)
+        if reasoning_content and reasoning_content.strip():
+            self.logger.debug(f"Found 'reasoning_content' field: {len(reasoning_content)} characters")
+            
+            # Try to extract JSON from reasoning content
+            extracted_json = self._extract_json_from_reasoning(reasoning_content)
+            if extracted_json:
+                self.logger.info("Successfully extracted JSON from reasoning_content")
+                return extracted_json
+            
+            # If no JSON found, return the reasoning content as-is
+            # (might contain instructions or explanations)
+            self.logger.warning("No valid JSON found in reasoning_content, returning as-is")
+            return reasoning_content
+        
+        self.logger.error("Both 'content' and 'reasoning_content' are empty or missing")
+        return ""
+
+
+    def _extract_json_from_reasoning(self, reasoning_content: str) -> str:
+        """
+        Extract JSON object from reasoning content that contains mixed text and JSON
+        
+        Args:
+            reasoning_content: The reasoning content string
+            
+        Returns:
+            Extracted JSON string or empty string if not found
+        """
+        import re
+        import json
+        
+        # Look for JSON object patterns in the reasoning content
+        # Pattern 1: Look for { ... } structures
+        json_object_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+        matches = re.findall(json_object_pattern, reasoning_content, re.DOTALL)
+        
+        for match in matches:
+            try:
+                # Test if it's valid JSON
+                json.loads(match)
+                self.logger.debug(f"Found valid JSON object: {len(match)} chars")
+                return match
+            except json.JSONDecodeError:
+                continue
+        
+        # Pattern 2: Look for array structures
+        json_array_pattern = r'\[[^\[\]]*(?:\[[^\[\]]*\][^\[\]]*)*\]'
+        matches = re.findall(json_array_pattern, reasoning_content, re.DOTALL)
+        
+        for match in matches:
+            try:
+                json.loads(match)
+                self.logger.debug(f"Found valid JSON array: {len(match)} chars")
+                return match
+            except json.JSONDecodeError:
+                continue
+        
+        # Pattern 3: Look for the specific case we see in logs
+        # JSON starting with specific pattern
+        specific_patterns = [
+            r'\{\s*"name":\s*"[^"]*".*?\}',
+            r'\[\s*\{\s*"name":\s*"[^"]*".*?\}\s*\]',
+        ]
+        
+        for pattern in specific_patterns:
+            matches = re.findall(pattern, reasoning_content, re.DOTALL | re.IGNORECASE)
+            for match in matches:
+                try:
+                    json.loads(match)
+                    self.logger.debug(f"Found JSON with specific pattern: {len(match)} chars")
+                    return match
+                except json.JSONDecodeError:
+                    continue
+        
+        # Pattern 4: Try to find JSON by looking for balanced braces
+        brace_positions = []
+        brace_count = 0
+        
+        for i, char in enumerate(reasoning_content):
+            if char == '{':
+                if brace_count == 0:
+                    start_pos = i
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    potential_json = reasoning_content[start_pos:i+1]
+                    try:
+                        json.loads(potential_json)
+                        self.logger.debug(f"Found JSON by brace matching: {len(potential_json)} chars")
+                        return potential_json
+                    except json.JSONDecodeError:
+                        continue
+        
+        self.logger.warning("Could not extract valid JSON from reasoning_content")
+        return ""
+
+
+    def _clean_json_content(self, content: str) -> str:
+        """
+        Clean JSON content by removing common formatting issues
+        
+        Args:
+            content: Raw JSON content string
+            
+        Returns:
+            Cleaned JSON content string
+        """
+        import re
+        
+        # Remove leading/trailing whitespace
+        cleaned = content.strip()
+        
+        # Remove any text before the first { or [
+        json_start = min(
+            (cleaned.find('{') if cleaned.find('{') != -1 else len(cleaned)),
+            (cleaned.find('[') if cleaned.find('[') != -1 else len(cleaned))
+        )
+        
+        if json_start < len(cleaned):
+            cleaned = cleaned[json_start:]
+        
+        # Remove any text after the last } or ]
+        last_brace = max(cleaned.rfind('}'), cleaned.rfind(']'))
+        if last_brace != -1:
+            cleaned = cleaned[:last_brace + 1]
+        
+        # Fix common JSON formatting issues
+        # Remove trailing commas before closing braces/brackets
+        cleaned = re.sub(r',(\s*[}\]])', r'\1', cleaned)
+        
+        # Fix unescaped quotes in strings (basic attempt)
+        # This is a simplified approach - more sophisticated parsing might be needed
+        
+        return cleaned
+
+
+
+    def _clean_json_content(self, content: str) -> str:
+        """
+        Clean JSON content by removing common formatting issues
+
+        Args:
+            content: Raw JSON content string
+
+        Returns:
+            Cleaned JSON content string
+        """
+        import re
+
+        # Try to find JSON within the text
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            cleaned = json_match.group(0)
+        else:
+            # If no JSON found, use original content
+            cleaned = content
+
+        # Remove leading/trailing whitespace
+        cleaned = cleaned.strip()
+
+        # Remove any text before the first { or [
+        json_start = min(
+            (cleaned.find('{') if cleaned.find('{') != -1 else len(cleaned)),
+            (cleaned.find('[') if cleaned.find('[') != -1 else len(cleaned))
+        )
+
+        if json_start < len(cleaned):
+            cleaned = cleaned[json_start:]
+
+        # Remove any text after the last } or ]
+        last_brace = max(cleaned.rfind('}'), cleaned.rfind(']'))
+        if last_brace != -1:
+            cleaned = cleaned[:last_brace + 1]
+
+        # Fix common JSON formatting issues
+        # Remove trailing commas before closing braces/brackets
+        cleaned = re.sub(r',(\s*[}\]])', r'\1', cleaned)
+
+        # Fix unescaped quotes in strings (basic attempt)
+        # This is a simplified approach - more sophisticated parsing might be needed
+
+        return cleaned
+
+    def get_structured_output(self, schema_class: BaseModel, system_message: str, user_message: str, **kwargs) -> BaseModel:
+        """
+        Get structured output from the LLM using the provided schema.
+        FIXED VERSION - handles empty content and reasoning_content fields
+        
+
+
+        Args:
+            schema_class: Pydantic model class for validation
+            system_message: System prompt
+            user_message: User prompt
+            **kwargs: Additional parameters for the API call
+            
+        Returns:
+            Instance of schema_class with validated data
+        """
         try:
-            self.logger.debug("Calling OpenAI client.beta.chat.completions.parse...")
-            completion = self.client.beta.chat.completions.parse(
-                model=self.model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                response_format=schema_class,
-            )
-            self.logger.debug(f"Raw completion object from parse: {completion}")
-
-            if completion and completion.choices and len(completion.choices) > 0:
-                if hasattr(completion.choices[0], 'message') and completion.choices[0].message:
-                    if hasattr(completion.choices[0].message, 'parsed'):
-                        response = completion.choices[0].message.parsed
-                        self.logger.debug(f"Parsed response: {response}")
-                        return response
-                    else:
-                        self.logger.error("Completion choice message does not have 'parsed' attribute.")
-                        self.logger.error(f"Message object: {completion.choices[0].message}")
-                        return None
-                else:
-                    self.logger.error("Completion choice does not have 'message' attribute or message is None.")
-                    self.logger.error(f"Choice object: {completion.choices[0]}")
-                    return None
-            else:
-                self.logger.error("Completion object is None, has no choices, or choices list is empty.")
-                return None
-
+            # Prepare messages
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
+            ]
+            
+            # Set default parameters for structured output
+            api_params = {
+                "model": self.model,
+                "messages": messages,
+                "response_format": {"type": "json_object"},
+                "temperature": kwargs.get("temperature", 0.1),
+                "max_tokens": kwargs.get("max_tokens", 4000),
+            }
+            
+            # Add any additional parameters
+            api_params.update({k: v for k, v in kwargs.items() 
+                              if k not in ["temperature", "max_tokens"]})
+            
+            self.logger.debug(f"Requesting structured output. Model: {self.model}, Schema: {schema_class.__name__}, "
+                             f"System: '{system_message[:50] if system_message else None}...', User: '{user_message[:50] if user_message else None}...'")
+                            # f"System: '{system_message[:50]}...', User: '{user_message[:50]}...'")
+            
+            # Make the API call
+            response = self.client.chat.completions.create(**api_params)
+            
+            # DEBUG: Log the full response structure
+            self.logger.debug(f"Raw response type: {type(response)}")
+            self.logger.debug(f"Response attributes: {dir(response)}")
+            
+            if hasattr(response, 'choices') and response.choices:
+                choice = response.choices[0]
+                self.logger.debug(f"Choice type: {type(choice)}, attributes: {dir(choice)}")
+                
+                if hasattr(choice, 'message'):
+                    message = choice.message
+                    self.logger.debug(f"Message type: {type(message)}, attributes: {dir(message)}")
+                    
+                    # Extract content with fallback to reasoning_content
+                    raw_content = self._extract_content_with_fallback(message)
+                    
+                    if not raw_content or not raw_content.strip():
+                        error_msg = ("Empty response content. This might indicate:\n"
+                                   "1. API configuration issues\n"
+                                   "2. Model not following JSON format instructions\n"
+                                   "3. Content filtering or safety measures\n"
+                                   "4. Token limit exceeded")
+                        self.logger.error(error_msg)
+                        raise ValueError("Empty response content - check API configuration")
+                    
+                    self.logger.debug(f"Extracted content length: {len(raw_content)}")
+                    self.logger.debug(f"Content preview: {raw_content[:200]}...")
+                    
+                    # Validate and parse JSON
+                    try:
+                        parsed = schema_class.model_validate_json(raw_content)
+                        self.logger.debug(f"Successfully parsed structured output: {schema_class.__name__}")
+                        return parsed
+                        
+                    except Exception as parse_error:
+                        self.logger.error(f"JSON parsing failed: {parse_error}")
+                        self.logger.error(f"Raw content: {raw_content[:500]}")
+                        
+                        # Try to clean and re-parse the JSON
+                        cleaned_content = self._clean_json_content(raw_content)
+                        if cleaned_content != raw_content:
+                            try:
+                                parsed = schema_class.model_validate_json(cleaned_content)
+                                self.logger.info("Successfully parsed after JSON cleaning")
+                                return parsed
+                            except Exception as clean_parse_error:
+                                self.logger.error(f"Cleaning attempt also failed: {clean_parse_error}")
+                        
+                        raise parse_error
+            
+            raise ValueError("Response structure is invalid - no choices or message found")
+            
         except Exception as e:
-            self.logger.error(f"An error occurred during get_structured_output: {e}", exc_info=True)
-            return None
+            self.logger.error(f"An error occurred during get_structured_output: {e}")
+            raise
+
+
 
     def get_embeddings(self, text):
         """
@@ -184,7 +455,7 @@ if __name__ == "__main__":
     print("Testing starts")
 
     # Test OpenAIAPI
-    openai_api = OpenAIAPI("gpt-4o")  # Use an appropriate model name
+    openai_api = OpenAIAPI("openai/gpt-oss-120b")  # Use an appropriate model name
     
     # Test get_completion
     system_content = "You are a helpful assistant."
