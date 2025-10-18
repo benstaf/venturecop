@@ -9,11 +9,35 @@ import pytesseract
 from datetime import datetime
 import streamlit.components.v1 as components
 
+import time
+
+
 st.set_page_config(
     page_title="Venture Copilot - ReyzHub",
     page_icon="favicon.ico",
     layout="centered"
 )
+
+
+# Hide the sidebar and navigation completely
+st.markdown("""
+    <style>
+        [data-testid="stSidebarNav"] {
+            display: none !important;
+        }
+        [data-testid="collapsedControl"] {
+            display: none !important;
+        }
+        section[data-testid="stSidebar"] {
+            display: none !important;
+        }
+        /* Additional selectors for sidebar */
+        .css-1d391kg {
+            display: none !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 
 
 
@@ -144,56 +168,90 @@ def extract_text_from_pdf(uploaded_file):
 
 def main():
     st.title("Hello, I am Marc, your favorite Venture Copilot")
-   # st.write("Upload your startup pitch deck (PDF). For a self-hosted alternative, contact info@reyzhub.com")
 
-    uploaded_file = st.file_uploader("Upload your Startup Pitch Deck (PDF)", type=["pdf"])
-    st.markdown("Contact us <a href='mailto:info@reyzhub.com' target='_blank'>info@reyzhub.com</a> for self-hosting your own Venture Copilot", unsafe_allow_html=True)
+    # File uploader
+    uploaded_file = st.file_uploader(
+        "Upload your Startup Pitch Deck (PDF)",
+        type=["pdf"],
+        key="pitchdeck_uploader"
+    )
+
+    # Contact and policy links
+    st.markdown(
+        "Contact us <a href='mailto:info@reyzhub.com' target='_blank'>info@reyzhub.com</a> for self-hosting your own Venture Copilot",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "<div style='text-align: center;'><a href='/privacy_policy' target='_self'>Terms of Service & Privacy Policy</a></div>",
+        unsafe_allow_html=True
+    )
+
+    # ✅ Store file in session_state when uploaded
     if uploaded_file is not None:
-        st.success("✅ File uploaded successfully!")
+        st.session_state.uploaded_file = uploaded_file
+        st.session_state.file_uploaded = True
 
-        # Ensure decks directory exists
+    # ✅ Only run after file upload
+    if st.session_state.get("file_uploaded", False):
+        uploaded_file = st.session_state.uploaded_file
+
+        st.info("✅ File uploaded! Please wait a minute...⏳")
+
+#        with st.spinner("Preparing your file for analysis..."):
+ #           time.sleep(1)  # short spinner to indicate the process has started
+
+
+
+#        st.success("✅ File uploaded successfully, wait ")
+
         os.makedirs("decks", exist_ok=True)
 
-        # Save the uploaded file
-
-
-        # Get current timestamp in YYYYMMDD_HHMM format (no seconds)
+        # Timestamped save path
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-
-        # Create the filename with timestamp
         filename, ext = os.path.splitext(uploaded_file.name)
-        deck_path = os.path.join("decks", f"{filename}_{timestamp}{ext}")
+        deck_path = os.path.join("decks", f"{timestamp}_{filename}{ext}")
 
-#        deck_path = os.path.join("decks", uploaded_file.name)
         with open(deck_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
- #       st.info(f"📂 Pitch deck saved to: {deck_path}")
 
-        text = extract_text_from_pdf(uploaded_file)
+        # ✅ Run analysis only once per upload
+        if "analysis_done" not in st.session_state:
+            text = extract_text_from_pdf(uploaded_file)
+            if not text:
+                st.error("No readable text found in PDF. Please upload a valid pitch deck.")
+                return
 
-        if not text:
-            st.error("No readable text found in PDF. Please upload a valid pitch deck.")
-            return
+#            st.info("🔎 Starting analysis... please wait.")
 
-        # Hide full text, just confirm extraction worked
-#        st.success(f"📝 Text successfully extracted ({len(text)} characters).")
+            global StartupFramework
+            if StartupFramework is None:
+                from ssff_framework import StartupFramework as SF
+                StartupFramework = SF
 
-        # 🚀 Run the analysis automatically once text is extracted
-        st.info("🔎 Starting analysis... please wait.")
+            framework = StartupFramework()
+            result_placeholder = st.empty()
+            result = analyze_startup_with_updates(framework, text, result_placeholder)
 
-        global StartupFramework
-        if StartupFramework is None:
-            from ssff_framework import StartupFramework as SF
-            StartupFramework = SF
+            if result:
+                st.session_state.analysis_result = result
+                st.session_state.analysis_done = True
+            else:
+                st.error("Analysis did not complete successfully.")
+                st.session_state.analysis_done = False
 
-        framework = StartupFramework()
-        result_placeholder = st.empty()
-        result = analyze_startup_with_updates(framework, text, result_placeholder)
-        if result:
-            display_final_results(result, "advanced")
-        else:
-            st.error("Analysis did not complete successfully. Please check the errors above.")
-    inject_umami()  # ✅ Enables Umami visitor tracking
+    # ✅ Display analysis results if already done
+    if st.session_state.get("analysis_done", False):
+        display_final_results(st.session_state.analysis_result, "advanced")
+
+        # Optional reset button
+#        if st.button("🔄 Upload a new deck"):
+ #           st.session_state.clear()
+  #          st.rerun()
+
+    # Add Umami analytics
+    inject_umami()
+
+
 
 
 
@@ -235,7 +293,53 @@ def analyze_startup_with_updates(framework, startup_info_str, placeholder):
             result['Founder Info'] = founder_analysis.dict()
 
   #          update_status("Advanced founder analysis", 0.6)
+
+
+
+
+            # --- MODIFICATION START ---
+
+            # 1. Store a reference to the original method so we can restore it later.
+ #           original_get_segmentation_prompt = framework.founder_agent._get_segmentation_prompt
+
+            # 2. Define a new "wrapper" function that will call the original method and then log its output.
+  #          def debug_get_segmentation_prompt_wrapper():
+                # Call the original method to get the actual prompt text.
+   #             prompt = original_get_segmentation_prompt()
+#                
+                # --- DEBUGGING LOGIC ---
+                # Display the prompt in a collapsible expander in the Streamlit UI.
+#                with st.expander("🔍 Debug: Founder Segmentation Prompt", expanded=False):
+ #                   st.subheader("Prompt sent to LLM:")
+  #                  st.code(prompt, language='text')
+ #               
+                # Also save the prompt to a log file for easy access.
+   #             with open("founder_segmentation_prompt_debug.log", "w") as f:
+    #                f.write("=== FOUNDER SEGMENTATION PROMPT ===\n")
+     #               f.write(prompt)
+      #              f.write("\n=== END PROMPT ===\n")
+                # --- END DEBUGGING LOGIC ---
+  #              
+                # Return the original prompt so the rest of the application logic works as expected.
+       #         return prompt
+
+            # 3. Temporarily replace the object's method with our new debug version.
+        #    framework.founder_agent._get_segmentation_prompt = debug_get_segmentation_prompt_wrapper
+
+            # --- MODIFICATION END ---
+
             founder_segmentation = framework.founder_agent.segment_founder(startup_info.founder_backgrounds)
+
+
+            # --- MODIFICATION START (Part 2) ---
+
+            # 5. IMPORTANT: Restore the original method to its place. This ensures that
+            #    if you call `segment_founder` again anywhere else, it won't have the debug code.
+         #   framework.founder_agent._get_segmentation_prompt = original_get_segmentation_prompt
+
+            # --- MODIFICATION END (Part 2) ---
+
+
             founder_idea_fit = framework.founder_agent.calculate_idea_fit(
                 startup_info.dict(), startup_info.founder_backgrounds
             )

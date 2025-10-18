@@ -167,7 +167,103 @@ class VCScoutAgent(BaseAgent):
 
 
 
+    def parse_record(self, startup_info: str) -> StartupInfo:
+        """
+        Convert a string description of a startup into a StartupInfo schema.
+        """
+        self.logger.info("Parsing startup information into StartupInfo schema")
+        prompt = """
+        You are an expert analyst at a top-tier venture capital firm. Your task is to meticulously extract information from a startup's pitch deck text.
 
+        **CRITICAL INSTRUCTION: Pay special attention to finding ANY information about the founding team.** Founder information is often scattered or implicitly mentioned. Look for:
+        - Explicit "Team", "Founders", or "About Us" sections.
+        - Names mentioned at the beginning, end, or in signatures.
+        - Personal anecdotes ("When I was at Google...", "Our co-founder, a PhD from MIT...").
+        - Descriptions of experience ("10 years in fintech", "serial entrepreneur").
+        - Educational background mentions ("Harvard MBA", "dropped out of Stanford").
+        - Photos with captions (the text might mention "John Doe, CEO").
+        - Any use of "I", "we", "our" that refers to the team's background.
+
+        If you cannot find specific names, describe the *type* of experience mentioned (e.g., "technical team with AI background", "finance expert founder").
+
+        Convert the following startup description into a detailed JSON structure that matches the StartupInfo schema.
+        Include ALL fields listed below. If information for a field is not available, set it to "N/A" or null.
+
+        **Required fields (must be included):**
+        - name (str)
+        - description (str, default to "N/A" if missing)
+        - mission (str, default to "N/A" if missing)
+        - vision (str, default to "N/A" if missing)
+        - industry (str, default to "N/A" if missing)
+        - patents (str, default to "N/A" if none)
+        - founder_backgrounds (str, details about founders' backgrounds, education, experience)
+        - track_records (str, details about founders' past achievements or companies)
+        - leadership_skills (str, details about founders' leadership capabilities)
+        - vision_alignment (str, how the team's vision aligns with the product)
+        - team_dynamics (str, information about how the team works together)
+
+        **Optional fields (include if available, otherwise omit):**
+        - tagline (str)
+        - ticker (str)
+        - market_size (str)
+        - growth_rate (str)
+        - competition (str)
+        - market_trends (str)
+        - go_to_market_strategy (str)
+        - product_details (str)
+        - technology_stack (str)
+        - scalability (str)
+        - user_feedback (str)
+        - product_fit (str)
+        - web_traffic_growth (str)
+        - social_media_presence (str)
+        - investment_rounds (str)
+        - regulatory_approvals (str)
+
+        **Example Output:**
+        ```json
+        {
+          "name": "Omniscient Neurotechnology",
+          "description": "Uses data & machine learning to build advanced brain maps...",
+          "mission": "To improve the lives of billions through connectomics...",
+          "vision": "Connectomics is a foundational technology of the 21st century...",
+          "industry": "Neurotechnology",
+          "patents": "N/A",
+          "founder_backgrounds": "Dr. Jane Smith - PhD in Neuroscience from Stanford, 10 years research experience; John Doe - MBA from Harvard, former executive at MedTech company",
+          "track_records": "Dr. Smith published 20+ papers in neuroscience; Doe led 3 successful product launches at previous company",
+          "leadership_skills": "Strong technical leadership combined with business acumen",
+          "vision_alignment": "Team shares vision of democratizing brain mapping technology",
+          "team_dynamics": "Complementary skills with scientific and business expertise",
+          "tagline": "THE HUMAN CONNECTOME COMPANY",
+          "ticker": "o8t"
+        }
+        ```
+
+        **Startup description:**
+        {startup_info}
+        """
+        try:
+            startup_info_dict = self.get_json_response(StartupInfo, prompt, startup_info)
+            self.logger.debug(f"Parsed startup info: {startup_info_dict}")
+            if isinstance(startup_info_dict, dict):
+                return StartupInfo(**startup_info_dict)
+            return startup_info_dict
+        except Exception as e:
+            self.logger.error(f"Error parsing startup info: {str(e)}")
+            # Return a valid StartupInfo object with default values
+            return StartupInfo(
+                name="N/A",
+                description="Failed to parse startup info",
+                mission="N/A",
+                vision="N/A",
+                industry="N/A",
+                patents="N/A",
+                founder_backgrounds="N/A",
+                track_records="N/A",
+                leadership_skills="N/A",
+                vision_alignment="N/A",
+                team_dynamics="N/A"
+            )
 
 
     def evaluate(self, startup_info: StartupInfo, mode: str) -> StartupEvaluation:
